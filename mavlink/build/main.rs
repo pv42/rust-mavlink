@@ -42,10 +42,20 @@ fn main() -> ExitCode {
 
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    let result = match mavlink_bindgen::generate(definitions_dir, out_dir) {
+
+    let mut file_result = vec![];
+    let ls = std::fs::read_dir(&definitions_dir).unwrap();
+    for entry in ls {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            file_result.push(path);
+        }
+    }
+
+    let result = match mavgen::generate_dir(&file_result, Path::new(&out_dir)) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("{e}");
+            eprintln!("{e:?}");
             return ExitCode::FAILURE;
         }
     };
@@ -53,7 +63,7 @@ fn main() -> ExitCode {
     #[cfg(feature = "format-generated-code")]
     mavlink_bindgen::format_generated_code(&result);
 
-    mavlink_bindgen::emit_cargo_build_messages(&result);
+    //mavlink_bindgen::emit_cargo_build_messages(&result);
 
     ExitCode::SUCCESS
 }
