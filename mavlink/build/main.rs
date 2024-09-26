@@ -60,8 +60,8 @@ fn main() -> ExitCode {
         }
     };
 
-    #[cfg(feature = "format-generated-code")]
-    mavlink_bindgen::format_generated_code(&result);
+    //#[cfg(feature = "format-generated-code")]
+    //mavlink_bindgen::format_generated_code(&result);
 
     //mavlink_bindgen::emit_cargo_build_messages(&result);
 

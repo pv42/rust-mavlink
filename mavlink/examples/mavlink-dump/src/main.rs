@@ -61,20 +61,20 @@ fn main() {
 
 /// Create a heartbeat message using 'ardupilotmega' dialect
 pub fn heartbeat_message() -> mavlink::ardupilotmega::MavMessage {
-    mavlink::ardupilotmega::MavMessage::HEARTBEAT(mavlink::ardupilotmega::HEARTBEAT_DATA {
+    mavlink::ardupilotmega::MavMessage::Heartbeat(mavlink::ardupilotmega::Heartbeat {
         custom_mode: 0,
-        mavtype: mavlink::ardupilotmega::MavType::MAV_TYPE_QUADROTOR,
-        autopilot: mavlink::ardupilotmega::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+        r#type: mavlink::ardupilotmega::MavType::MavTypeQuadrotor,
+        autopilot: mavlink::ardupilotmega::MavAutopilot::MavAutopilotArdupilotmega,
         base_mode: mavlink::ardupilotmega::MavModeFlag::empty(),
-        system_status: mavlink::ardupilotmega::MavState::MAV_STATE_STANDBY,
+        system_status: mavlink::ardupilotmega::MavState::MavStateStandby,
         mavlink_version: 0x3,
     })
 }
 
 /// Create a message requesting the parameters list
 pub fn request_parameters() -> mavlink::ardupilotmega::MavMessage {
-    mavlink::ardupilotmega::MavMessage::PARAM_REQUEST_LIST(
-        mavlink::ardupilotmega::PARAM_REQUEST_LIST_DATA {
+    mavlink::ardupilotmega::MavMessage::ParamRequestList(
+        mavlink::ardupilotmega::ParamRequestList {
             target_system: 0,
             target_component: 0,
         },
@@ -83,8 +83,8 @@ pub fn request_parameters() -> mavlink::ardupilotmega::MavMessage {
 
 /// Create a message enabling data streaming
 pub fn request_stream() -> mavlink::ardupilotmega::MavMessage {
-    mavlink::ardupilotmega::MavMessage::REQUEST_DATA_STREAM(
-        mavlink::ardupilotmega::REQUEST_DATA_STREAM_DATA {
+    mavlink::ardupilotmega::MavMessage::RequestDataStream(
+        mavlink::ardupilotmega::RequestDataStream {
             target_system: 0,
             target_component: 0,
             req_stream_id: 0,
