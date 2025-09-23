@@ -28,6 +28,11 @@ name = "mavlink-dump"
 path = "examples/mavlink-dump/src/main.rs"
 required-features = ["ardupilotmega"]
 
+[[example]]
+name = "mavlink-c-test"
+path = "examples/mavlink-c-test/src/main.rs"
+required-features = ["common"]
+
 [dependencies]
 mavlink-core = { version="=0.16.1", path = "../mavlink-core", default-features = false }
 num-traits = { workspace = true, default-features = false }
