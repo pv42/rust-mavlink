@@ -1,6 +1,5 @@
-use rand::seq::IndexedRandom;
 use regex::Regex;
-use mavlink::common;
+use mavlink::all::MavMessage;
 use mavlink::Message;
 use std::fs::File;
 use std::io::Write;
@@ -9,7 +8,7 @@ use rand::Rng;
 use std::process::Command;
 
 pub fn main() {
-    for id in common::MavMessage::all_ids() {
+    for id in MavMessage::all_ids() {
         test_message(*id);
     }
 }
@@ -17,7 +16,7 @@ pub fn main() {
 fn test_message(id: u32) {
     let mut buf = vec![];
     let mut rng = rand::rng();
-    let random_msg = common::MavMessage::random_message_from_id(id, &mut rng).unwrap();
+    let random_msg = MavMessage::random_message_from_id(id, &mut rng).unwrap();
     let header = mavlink::MavHeader {
         sequence: rng.random(),
         system_id: rng.random(),
@@ -44,7 +43,7 @@ fn test_message(id: u32) {
     println!();
 }
 
-fn write_c_asserts(msg: &common::MavMessage, header: &mavlink::MavHeader) {
+fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
     let mut str = String::new();
     str += &format!("assert(msg.seq == {});\n", header.sequence);
     str += &format!("assert(msg.sysid == {});\n", header.system_id);
@@ -85,7 +84,10 @@ fn write_c_asserts(msg: &common::MavMessage, header: &mavlink::MavHeader) {
             if name == "mavtype" {
                 name = "type";
             }
-            let value = caps.get(2).unwrap().as_str();
+            let mut value = caps.get(2).unwrap().as_str();
+            if value == "UNDER_WAY" {
+                value = "AIS_NAV_STATUS_UNDER_WAY";
+            }
             //println!("ENUM {name}: {value}");
             str += &format!("assert(decode.{name} == {value});\n");
         } else {

@@ -1,4 +1,4 @@
-#include "../../../c_library_v2/common/mavlink.h"
+#include "../../../c_library_v2/all/mavlink.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
