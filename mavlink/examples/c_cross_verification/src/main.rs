@@ -43,6 +43,54 @@ fn test_message(id: u32) {
     println!();
 }
 
+fn get_json_key_value(data: &mut String) -> Option<(String, String)> {
+    let mut index = 0usize;
+    let mut level = 0;
+    let mut key = String::new();
+    loop {
+        match data.as_bytes()[index] {
+            b':' if level == 0  => {
+                let tmp = data.split_off(index);
+                key = data[1..data.len()-1].to_string();
+                *data = tmp;
+                index = 0;
+            }
+            b',' if level == 0 => {
+                let tmp = data.split_off(index + 1);
+                let value = data[1..data.len()-1].to_string();
+                *data = tmp;
+                return Some((key, value));
+            } 
+            b'{' => {
+                level += 1;
+            }
+            b'[' => {
+                level += 1;
+            }
+            b']' => {
+                level -= 1;
+            }
+            b'}' => {
+                if level == 0 {
+                    if !key.is_empty() {
+                        let tmp = data.split_off(index);
+                        let value = data[1..].to_string();
+                        *data = tmp;
+                        return Some((key, value));
+                    }
+                } else {
+                    level -= 1;
+                }
+            }
+            _ => ()
+        }
+        index = index.wrapping_add(1);
+        if index >= data.len() {
+            return None;
+        } 
+    }
+}
+
 fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
     let mut str = String::new();
     str += &format!("assert(msg.seq == {});\n", header.sequence);
@@ -54,44 +102,80 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
     str += &format!("mavlink_msg_{}_decode(&msg, &decode);\n", lower_name);
     
     let json = serde_json::to_string(msg).unwrap();
-    for part in json.split(",") {
-        if part.contains("[") {
+    let mut json_clone = json.clone();
+    json_clone = json_clone.split_off(1);
+    println!("{}", json_clone);
+    while let Some((k,v)) = get_json_key_value(&mut json_clone) {
+        if k == "type" {
             continue;
         }
-        let re_number = Regex::new("\"([a-z_]+)\":(\\d+)$").unwrap();
-        let re_enum = Regex::new("\"([a-z_]+)\":\\{\"type\":\"([A-Z_]+)\"\\}$").unwrap();
-        if let Some(caps) = re_number.captures(part) {
-            let mut name = caps.get(1).unwrap().as_str();
+        //println!("KV {k} {v}");
+        let re_float_number = Regex::new("^(-?\\d+(.\\d+(e-?\\d+)?)?)$").unwrap();
+        let re_int_number = Regex::new("^(-?\\d+)$").unwrap();
+        let re_enum = Regex::new("^\\{\"type\":\"([A-Z0-9_]+)\"\\}$").unwrap();
+        let re_flags = Regex::new("^\"[A-Z0-9_]+( \\| [A-Z0-9_]+)*\"$").unwrap();
+        if v == "null" {
+            let mut name = k.as_str();
+            // NAN
+            str += &format!("assert(decode.{name} != decode.{name});\n");
+        } else if let Some(_) = re_int_number.captures(&v) {
+            let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
             }
-            let value: f64 = caps.get(2).unwrap().as_str().parse().unwrap();
-            if value.fract() == 0.0 && value >= 0.0 {
-                let value: u64 = caps.get(2).unwrap().as_str().parse().unwrap();
+            let value: f64 = v.parse().unwrap();
+            if value >= 0.0 {
+                let value: u64 = v.parse().unwrap();
                 //println!("U64  {name}: {value}");
                 str += &format!("assert(decode.{name} == {value}ULL);\n");
-            } else if value.fract() == 0.0 {
-                let value: i64 = caps.get(2).unwrap().as_str().parse().unwrap();
+            } else {
+                let value: i64 = v.parse().unwrap();
                 //println!("I64  {name}: {value}");
                 str += &format!("assert(decode.{name} == {value});\n");
-            } else {
-                //println!("DBL  {name}: {value}");
-                str += &format!("assert(decode.{name} == {value});\n");
-            }
-
-        } else if let Some(caps) = re_enum.captures(part) {
-            let mut name = caps.get(1).unwrap().as_str();
+            } 
+        } else if let Some(_) = re_float_number.captures(&v) {
+            let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
             }
-            let mut value = caps.get(2).unwrap().as_str();
-            if value == "UNDER_WAY" {
-                value = "AIS_NAV_STATUS_UNDER_WAY";
+            let value: f64 = v.as_str().parse().unwrap();
+            //println!("DBL  {name}: {value:e}");
+            //str += &format!("if (decode.{name} != {value:e}) printf(\"Value: %30.30f\\n\", decode.{name});\n");
+            str += &format!("if (sizeof(decode.{name}) == 4) {{ assert((float)decode.{name} == (float){value:e}); }} else {{ assert(decode.{name} == {value:e}); }}\n");
+        } else if let Some(caps) = re_enum.captures(&v) {
+            let mut name = k.as_str();
+            if name == "mavtype" {
+                name = "type";
             }
-            //println!("ENUM {name}: {value}");
+            let mut value = caps.get(1).unwrap().as_str().to_string();
+            if value == "UNDER_WAY" {
+                //value = "AIS_NAV_STATUS_UNDER_WAY".to_string();
+            }
             str += &format!("assert(decode.{name} == {value});\n");
+        } else if let Some(_) = re_flags.captures(&v) {
+            let mut name = k.as_str();
+            if name == "mavtype" {
+                name = "type";
+            }
+            let value = &v[1..v.len()-1];
+            str += &format!("assert(decode.{name} == {value});\n");
+        } else if v.starts_with('[') {
+            let name = k.as_str();
+            let mut index = 0;
+            for indexed_v in v[1..v.len()-1].split(",") {
+                if indexed_v == "null" {
+                    // NaN
+                    str += &format!("assert(decode.{name}[{index}] != decode.{name}[{index}]);\n");
+                } else {
+                    //str += &format!("if ((uint8_t)decode.{name}[{index}] != {indexed_v}) printf(\"Value: %d\\n\", (uint8_t)(decode.{name}[{index}]));\n");
+                    str += &format!("if (strcmp(typename(decode.{name}[{index}]), \"char\") == 0) {{\n  assert((uint8_t)decode.{name}[{index}] == {indexed_v});\n}} else if (strcmp(typename(decode.{name}[{index}]), \"float\") == 0) {{\n  assert(decode.{name}[{index}] == (float){indexed_v}); \n}} else {{\n  assert(decode.{name}[{index}] == {indexed_v});\n}}\n");
+                }
+                index += 1;
+            }
+            
         } else {
-            //println!("{part}");
+            println!("unknown value pattern: {v}");
+            panic!();
         }
     }
     std::fs::write("c_msg_asserts.c", &str).unwrap();

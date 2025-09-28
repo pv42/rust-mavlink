@@ -4,6 +4,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
+
+#define typename(x) _Generic((x), \
+    int:     "int", \
+    float:   "float", \
+    char:    "char", \
+    default: "other")
 
 int main() {
     mavlink_status_t status;
