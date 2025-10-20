@@ -77,7 +77,7 @@ fn main() -> ExitCode {
         XmlDefinitions::Files(definitions_to_bind)
     };
 
-    let result = match mavlink_bindgen::generate(xml_definitions, out_dir) {
+    let result = match mavlink_bindgen::generate(xml_definitions, out_dir, cfg!(feature = "pretty-generated-code")) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("{e}");

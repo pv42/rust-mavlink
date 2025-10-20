@@ -29,6 +29,8 @@ rand = { version = "0.9", optional = true, default-features = false, features = 
 regex = { version = "1.0" }
 serde = { version = "1.0.115", optional = true, features = ["derive"] }
 thiserror = { version = "2.0.12", default-features = false }
+prettyplease = { version = "0.2" }
+syn = { version = "2.0" }
 
 [features]
 cli = ["dep:clap", "dep:clap_lex", "dep:clap_builder", "dep:anstyle", "dep:anstyle-query", "dep:anstyle-parse"]

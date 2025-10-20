@@ -1888,6 +1888,7 @@ pub fn generate<W: Write>(
     definitions_dir: &Path,
     definition_file: &Path,
     output_rust: &mut W,
+    prettyfy: bool,
 ) -> Result<(), BindGenError> {
     let mut parsed_files: HashSet<PathBuf> = HashSet::new();
     let profile = parse_profile(definitions_dir, definition_file, &mut parsed_files)?;
@@ -1896,7 +1897,12 @@ pub fn generate<W: Write>(
 
     // rust file
     let rust_tokens = profile.emit_rust(&dialect_name);
-    writeln!(output_rust, "{rust_tokens}").unwrap();
+    
+    if prettyfy {
+        writeln!(output_rust, "{}", prettyplease::unparse(&syn::parse2(rust_tokens).unwrap())).unwrap();
+    } else {
+        writeln!(output_rust, "{rust_tokens}").unwrap();
+    }
 
     Ok(())
 }
