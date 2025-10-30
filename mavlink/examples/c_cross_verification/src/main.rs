@@ -115,7 +115,7 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
         let re_enum = Regex::new("^\\{\"type\":\"([A-Z0-9_]+)\"\\}$").unwrap();
         let re_flags = Regex::new("^\"[A-Z0-9_]+( \\| [A-Z0-9_]+)*\"$").unwrap();
         if v == "null" {
-            let mut name = k.as_str();
+            let name = k.as_str();
             // NAN
             str += &format!("assert(decode.{name} != decode.{name});\n");
         } else if let Some(_) = re_int_number.captures(&v) {
@@ -147,10 +147,10 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
             if name == "mavtype" {
                 name = "type";
             }
-            let mut value = caps.get(1).unwrap().as_str().to_string();
-            if value == "UNDER_WAY" {
+            let value = caps.get(1).unwrap().as_str().to_string();
+            //if value == "UNDER_WAY" {
                 //value = "AIS_NAV_STATUS_UNDER_WAY".to_string();
-            }
+            //}
             str += &format!("assert(decode.{name} == {value});\n");
         } else if let Some(_) = re_flags.captures(&v) {
             let mut name = k.as_str();
@@ -172,7 +172,9 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
                 }
                 index += 1;
             }
-            
+        } else if v.starts_with('"') {
+            let name = k.as_str();
+            str += &format!("assert(strcmp(decode.{name}, {v}) == 0);");  
         } else {
             println!("unknown value pattern: {v}");
             panic!();
