@@ -1,6 +1,6 @@
-use regex::Regex;
 use mavlink::all::MavMessage;
 use mavlink::Message;
+use regex::Regex;
 use std::fs::File;
 use std::io::Write;
 
@@ -8,26 +8,16 @@ use rand::Rng;
 use std::process::Command;
 
 pub fn main() {
-    for id in MavMessage::all_ids() {
-        test_message(*id);
+    let mut full_c_str = String::new();
+    let msg_ids = MavMessage::all_ids()
+        .iter()
+        .filter(|x| **x < 8000 && **x >= 0)
+        .collect::<Vec<_>>();
+    for id in &msg_ids {
+        full_c_str += &test_message(**id);
     }
-}
-
-fn test_message(id: u32) {
-    let mut buf = vec![];
-    let mut rng = rand::rng();
-    let random_msg = MavMessage::random_message_from_id(id, &mut rng).unwrap();
-    let header = mavlink::MavHeader {
-        sequence: rng.random(),
-        system_id: rng.random(),
-        component_id: rng.random(),
-    };
-    mavlink::write_v2_msg(&mut buf, header, &random_msg).unwrap();
-
-    let mut f = File::create("filename.bin").unwrap();
-    f.write_all(&buf).unwrap();
-    write_c_asserts(&random_msg, &header);
-
+    full_c_str += &emit_check_switch(msg_ids.as_slice());
+    std::fs::write("c_msg_asserts.c", &full_c_str).unwrap();
     println!("Compiling C");
     assert!(Command::new("gcc")
         .arg("main.c")
@@ -43,24 +33,52 @@ fn test_message(id: u32) {
     println!();
 }
 
+fn emit_check_switch(msg_ids: &[&u32]) -> String {
+    let mut str = String::from(
+        "void check_msg(uint32_t msg_id, mavlink_message_t* msg) {\n  switch(msg_id){\n",
+    );
+    for id in msg_ids {
+        str += &format!("  case {id}: check_{id}(msg); break;\n");
+    }
+    str += "  }\n}";
+    return str;
+}
+
+fn test_message(id: u32) -> String {
+    let mut buf = vec![];
+    let mut rng = rand::rng();
+    let random_msg = MavMessage::random_message_from_id(id, &mut rng).unwrap();
+    let header = mavlink::MavHeader {
+        sequence: rng.random(),
+        system_id: rng.random(),
+        component_id: rng.random(),
+    };
+    mavlink::write_v2_msg(&mut buf, header, &random_msg).unwrap();
+
+    let mut f = File::create(format!("messages/msg_{id}.bin")).unwrap();
+    f.write_all(&buf).unwrap();
+    let c_str = emit_c_asserts(&random_msg, &header, id);
+    return c_str;
+}
+
 fn get_json_key_value(data: &mut String) -> Option<(String, String)> {
     let mut index = 0usize;
     let mut level = 0;
     let mut key = String::new();
     loop {
         match data.as_bytes()[index] {
-            b':' if level == 0  => {
+            b':' if level == 0 => {
                 let tmp = data.split_off(index);
-                key = data[1..data.len()-1].to_string();
+                key = data[1..data.len() - 1].to_string();
                 *data = tmp;
                 index = 0;
             }
             b',' if level == 0 => {
                 let tmp = data.split_off(index + 1);
-                let value = data[1..data.len()-1].to_string();
+                let value = data[1..data.len() - 1].to_string();
                 *data = tmp;
                 return Some((key, value));
-            } 
+            }
             b'{' => {
                 level += 1;
             }
@@ -82,30 +100,32 @@ fn get_json_key_value(data: &mut String) -> Option<(String, String)> {
                     level -= 1;
                 }
             }
-            _ => ()
+            _ => (),
         }
         index = index.wrapping_add(1);
         if index >= data.len() {
             return None;
-        } 
+        }
     }
 }
 
-fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
+fn emit_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader, index: u32) -> String {
     let mut str = String::new();
-    str += &format!("assert(msg.seq == {});\n", header.sequence);
-    str += &format!("assert(msg.sysid == {});\n", header.system_id);
-    str += &format!("assert(msg.compid == {});\n", header.component_id);
-    str += &format!("assert(msg.msgid == {});\n", msg.message_id());
+    str += &format!("void check_{index}(mavlink_message_t* msg){{\n");
+    str += &format!("  printf(\"Checking msg id {index}\\n\");\n");
+    str += &format!("  assert(msg->seq == {});\n", header.sequence);
+    str += &format!("  assert(msg->sysid == {});\n", header.system_id);
+    str += &format!("  assert(msg->compid == {});\n", header.component_id);
+    str += &format!("  assert(msg->msgid == {});\n", msg.message_id());
     let lower_name = msg.message_name().to_ascii_lowercase();
-    str += &format!("mavlink_{}_t decode;\n", lower_name);
-    str += &format!("mavlink_msg_{}_decode(&msg, &decode);\n", lower_name);
-    
+    str += &format!("  mavlink_{}_t decode;\n", lower_name);
+    str += &format!("  mavlink_msg_{}_decode(msg, &decode);\n", lower_name);
+
     let json = serde_json::to_string(msg).unwrap();
     let mut json_clone = json.clone();
     json_clone = json_clone.split_off(1);
-    println!("{}", json_clone);
-    while let Some((k,v)) = get_json_key_value(&mut json_clone) {
+    println!("JSON_{:04}: {}", index, json_clone);
+    while let Some((k, v)) = get_json_key_value(&mut json_clone) {
         if k == "type" {
             continue;
         }
@@ -113,12 +133,14 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
         let re_float_number = Regex::new("^(-?\\d+(.\\d+(e-?\\d+)?)?)$").unwrap();
         let re_int_number = Regex::new("^(-?\\d+)$").unwrap();
         let re_enum = Regex::new("^\\{\"type\":\"([A-Z0-9_]+)\"\\}$").unwrap();
-        let re_flags = Regex::new("^\"[A-Z0-9_]+( \\| [A-Z0-9_]+)*\"$").unwrap();
+        let re_flags = Regex::new("^\"[A-Z][A-Z0-9_]+( \\| [A-Z0-9_]+)*\"$").unwrap();
         if v == "null" {
+            println!("type of {k} is null");
             let name = k.as_str();
             // NAN
-            str += &format!("assert(decode.{name} != decode.{name});\n");
+            str += &format!("  assert(decode.{name} != decode.{name});\n");
         } else if let Some(_) = re_int_number.captures(&v) {
+            println!("type of {k} is int");
             let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
@@ -127,13 +149,14 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
             if value >= 0.0 {
                 let value: u64 = v.parse().unwrap();
                 //println!("U64  {name}: {value}");
-                str += &format!("assert(decode.{name} == {value}ULL);\n");
+                str += &format!("  assert(decode.{name} == {value}ULL);\n");
             } else {
                 let value: i64 = v.parse().unwrap();
                 //println!("I64  {name}: {value}");
-                str += &format!("assert(decode.{name} == {value});\n");
-            } 
+                str += &format!("  assert(decode.{name} == {value});\n");
+            }
         } else if let Some(_) = re_float_number.captures(&v) {
+            println!("type of {k} is float");
             let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
@@ -141,45 +164,78 @@ fn write_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader) {
             let value: f64 = v.as_str().parse().unwrap();
             //println!("DBL  {name}: {value:e}");
             //str += &format!("if (decode.{name} != {value:e}) printf(\"Value: %30.30f\\n\", decode.{name});\n");
-            str += &format!("if (sizeof(decode.{name}) == 4) {{ assert((float)decode.{name} == (float){value:e}); }} else {{ assert(decode.{name} == {value:e}); }}\n");
+            str += &format!("  if (sizeof(decode.{name}) == 4) {{ assert((float)decode.{name} == (float){value:e}); }} else {{ assert(decode.{name} == {value:e}); }}\n");
         } else if let Some(caps) = re_enum.captures(&v) {
+            println!("type of {k} is enum");
             let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
             }
-            let value = caps.get(1).unwrap().as_str().to_string();
-            //if value == "UNDER_WAY" {
-                //value = "AIS_NAV_STATUS_UNDER_WAY".to_string();
-            //}
-            str += &format!("assert(decode.{name} == {value});\n");
+            let mut value = caps.get(1).unwrap().as_str().to_string();
+            if value == "UNDER_WAY" {
+                value = "AIS_NAV_STATUS_UNDER_WAY".to_string();
+            }
+            str += &format!("  assert(decode.{name} == {value});\n");
         } else if let Some(_) = re_flags.captures(&v) {
+            println!("type of {k} is flags");
             let mut name = k.as_str();
             if name == "mavtype" {
                 name = "type";
             }
-            let value = &v[1..v.len()-1];
-            str += &format!("assert(decode.{name} == {value});\n");
+            let value = &v[1..v.len() - 1];
+            str += &format!("  assert(decode.{name} == ({value}));\n");
         } else if v.starts_with('[') {
+            println!("type of {k} is array");
             let name = k.as_str();
             let mut index = 0;
-            for indexed_v in v[1..v.len()-1].split(",") {
+            for indexed_v in v[1..v.len() - 1].split(",") {
                 if indexed_v == "null" {
                     // NaN
-                    str += &format!("assert(decode.{name}[{index}] != decode.{name}[{index}]);\n");
+                    str +=
+                        &format!("  assert(decode.{name}[{index}] != decode.{name}[{index}]);\n");
                 } else {
                     //str += &format!("if ((uint8_t)decode.{name}[{index}] != {indexed_v}) printf(\"Value: %d\\n\", (uint8_t)(decode.{name}[{index}]));\n");
-                    str += &format!("if (strcmp(typename(decode.{name}[{index}]), \"char\") == 0) {{\n  assert((uint8_t)decode.{name}[{index}] == {indexed_v});\n}} else if (strcmp(typename(decode.{name}[{index}]), \"float\") == 0) {{\n  assert(decode.{name}[{index}] == (float){indexed_v}); \n}} else {{\n  assert(decode.{name}[{index}] == {indexed_v});\n}}\n");
+                    str += &format!("  const char* tp_name{name}{index} = typename(decode.{name}[{index}]);\n  if (strcmp(tp_name{name}{index}, \"char\") == 0) {{\n    assert((uint8_t)decode.{name}[{index}] == {indexed_v});\n  }} else if (strcmp(tp_name{name}{index}, \"float\") == 0) {{\n    assert(decode.{name}[{index}] == (float){indexed_v}); \n  }} else {{\n    assert(decode.{name}[{index}] == {indexed_v});\n  }}\n");
                 }
                 index += 1;
             }
-        } else if v.starts_with('"') {
+        } else if v.starts_with("\"") && v.len() >= 2 {
+            let mut v_mod = v[1..v.len() - 1].to_string();
+            if v_mod == "\"\"" {
+                v_mod = "".to_string();
+            }
+            println!("type of {k} is string");
             let name = k.as_str();
-            str += &format!("assert(strcmp(decode.{name}, {v}) == 0);");  
+            //let v_mod = v_mod.replace("\"", "\\\"");
+            let v_mod = v_mod.replace("\\u0001", "\\01");
+            let v_mod = v_mod.replace("\\u0002", "\\02");
+            let v_mod = v_mod.replace("\\u0003", "\\03");
+            let v_mod = v_mod.replace("\\u0004", "\\04");
+            let v_mod = v_mod.replace("\\u0005", "\\05");
+            let v_mod = v_mod.replace("\\u0007", "\\07");
+            let v_mod = v_mod.replace("\\u000e", "\\0e");
+            let v_mod = v_mod.replace("\\u0010", "\\10");
+            let v_mod = v_mod.replace("\\u0011", "\\11");
+            let v_mod = v_mod.replace("\\u0012", "\\12");
+            let v_mod = v_mod.replace("\\u0013", "\\13");
+            let v_mod = v_mod.replace("\\u0014", "\\14");
+            let v_mod = v_mod.replace("\\u0015", "\\15");
+            let v_mod = v_mod.replace("\\u0016", "\\16");
+            let v_mod = v_mod.replace("\\u0017", "\\17");
+            let v_mod = v_mod.replace("\\u0018", "\\18");
+            let v_mod = v_mod.replace("\\u0019", "\\19");
+            let v_mod = v_mod.replace("\\u001a", "\\1a");
+            let v_mod = v_mod.replace("\\u001b", "\\1b");
+            let v_mod = v_mod.replace("\\u001c", "\\1c");
+            let v_mod = v_mod.replace("\\u001d", "\\1d");
+            let v_mod = v_mod.replace("\\u001e", "\\1e");
+            let v_mod = v_mod.replace("\\u001f", "\\1f");
+            str += &format!("  assert(strcmp(decode.{name}, \"{v_mod}\") == 0);\n");
         } else {
-            println!("unknown value pattern: {v}");
+            println!("unknown value pattern for \"{k}\": \"{v}\" in \n{json}");
             panic!();
         }
     }
-    std::fs::write("c_msg_asserts.c", &str).unwrap();
-    print!("{str}");
+    str += "}\n";
+    return str;
 }

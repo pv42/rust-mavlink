@@ -23,7 +23,7 @@ Cargo.lock
 mavlink/bindings
 
 ## c-cross Example 
-mavlink/examples/c_cross_verification/filename.bin
+mavlink/examples/c_cross_verification/messages/*.bin
 mavlink/examples/c_cross_verification/main
 mavlink/examples/c_cross_verification/c_msg_asserts.c
 
