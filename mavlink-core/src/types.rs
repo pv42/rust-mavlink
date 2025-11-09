@@ -137,7 +137,9 @@ impl<'de, const N: usize> Deserialize<'de> for CharArray<N> {
 impl<'a, const N: usize> Arbitrary<'a> for CharArray<N> {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut data = [0u8; N];
-        u.fill_buffer(&mut data)?;
+        let s = u.arbitrary::<String>()?;
+        let len = s.len().min(N);
+        data[..len].copy_from_slice(&s.as_bytes()[..len]);
         Ok(CharArray::new(data))
     }
 }
