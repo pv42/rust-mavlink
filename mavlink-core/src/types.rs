@@ -136,8 +136,10 @@ impl<'de, const N: usize> Deserialize<'de> for CharArray<N> {
 #[cfg(feature = "arbitrary")]
 impl<'a, const N: usize> Arbitrary<'a> for CharArray<N> {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let s = u.arbitrary::<String>()?;
+        let len = s.len().min(N);
         let mut data = [0u8; N];
-        u.fill_buffer(&mut data)?;
+        data[..len].copy_from_slice(&s.as_bytes()[..len]);
         Ok(CharArray::new(data))
     }
 }
