@@ -11,7 +11,7 @@ pub fn main() {
     let mut full_c_str = String::new();
     let msg_ids = MavMessage::all_ids()
         .iter()
-        .filter(|x| **x < 8000 && **x >= 0)
+        .filter(|x| **x < 256000 && **x >= 0)
         .collect::<Vec<_>>();
     for id in &msg_ids {
         full_c_str += &test_message(**id);
@@ -19,7 +19,7 @@ pub fn main() {
     full_c_str += &emit_check_switch(msg_ids.as_slice());
     std::fs::write("c_msg_asserts.c", &full_c_str).unwrap();
     println!("Compiling C");
-    assert!(Command::new("gcc")
+    assert!(Command::new(r"C:\Users\pv42\Downloads\x86_64-15.2.0-release-win32-seh-msvcrt-rt_v13-rev0\mingw64\bin\gcc")
         .arg("main.c")
         .arg("-o")
         .arg("main")
@@ -149,7 +149,7 @@ fn emit_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader, index: u32) -> 
             if value >= 0.0 {
                 let value: u64 = v.parse().unwrap();
                 //println!("U64  {name}: {value}");
-                str += &format!("  assert(decode.{name} == {value}ULL);\n");
+                str += &format!("  if(strcmp(typeof(decode.{name}), "char")==0) {} else assert(decode.{name} == {value}ULL);\n");
             } else {
                 let value: i64 = v.parse().unwrap();
                 //println!("I64  {name}: {value}");
@@ -207,32 +207,32 @@ fn emit_c_asserts(msg: &MavMessage, header: &mavlink::MavHeader, index: u32) -> 
             println!("type of {k} is string");
             let name = k.as_str();
             //let v_mod = v_mod.replace("\"", "\\\"");
-            let v_mod = v_mod.replace("\\u0001", "\\01");
-            let v_mod = v_mod.replace("\\u0002", "\\02");
-            let v_mod = v_mod.replace("\\u0003", "\\03");
-            let v_mod = v_mod.replace("\\u0004", "\\04");
-            let v_mod = v_mod.replace("\\u0005", "\\05");
-            let v_mod = v_mod.replace("\\u0007", "\\07");
-            let v_mod = v_mod.replace("\\u000e", "\\0e");
-            let v_mod = v_mod.replace("\\u0010", "\\10");
-            let v_mod = v_mod.replace("\\u0011", "\\11");
-            let v_mod = v_mod.replace("\\u0012", "\\12");
-            let v_mod = v_mod.replace("\\u0013", "\\13");
-            let v_mod = v_mod.replace("\\u0014", "\\14");
-            let v_mod = v_mod.replace("\\u0015", "\\15");
-            let v_mod = v_mod.replace("\\u0016", "\\16");
-            let v_mod = v_mod.replace("\\u0017", "\\17");
-            let v_mod = v_mod.replace("\\u0018", "\\18");
-            let v_mod = v_mod.replace("\\u0019", "\\19");
-            let v_mod = v_mod.replace("\\u001a", "\\1a");
-            let v_mod = v_mod.replace("\\u001b", "\\1b");
-            let v_mod = v_mod.replace("\\u001c", "\\1c");
-            let v_mod = v_mod.replace("\\u001d", "\\1d");
-            let v_mod = v_mod.replace("\\u001e", "\\1e");
-            let v_mod = v_mod.replace("\\u001f", "\\1f");
-            str += &format!("  assert(strcmp(decode.{name}, \"{v_mod}\") == 0);\n");
+            let v_mod = v_mod.replace("\\u0001", "\\x01\"\"");
+            let v_mod = v_mod.replace("\\u0002", "\\x02\"\"");
+            let v_mod = v_mod.replace("\\u0003", "\\x03\"\"");
+            let v_mod = v_mod.replace("\\u0004", "\\x04\"\"");
+            let v_mod = v_mod.replace("\\u0005", "\\x05\"\"");
+            let v_mod = v_mod.replace("\\u0007", "\\x07\"\"");
+            let v_mod = v_mod.replace("\\u000e", "\\x0e\"\"");
+            let v_mod = v_mod.replace("\\u0010", "\\x10\"\"");
+            let v_mod = v_mod.replace("\\u0011", "\\x11\"\"");
+            let v_mod = v_mod.replace("\\u0012", "\\x12\"\"");
+            let v_mod = v_mod.replace("\\u0013", "\\x13\"\"");
+            let v_mod = v_mod.replace("\\u0014", "\\x14\"\"");
+            let v_mod = v_mod.replace("\\u0015", "\\x15\"\"");
+            let v_mod = v_mod.replace("\\u0016", "\\x16\"\"");
+            let v_mod = v_mod.replace("\\u0017", "\\x17\"\"");
+            let v_mod = v_mod.replace("\\u0018", "\\x18\"\"");
+            let v_mod = v_mod.replace("\\u0019", "\\x19\"\"");
+            let v_mod = v_mod.replace("\\u001a", "\\x1a\"\"");
+            let v_mod = v_mod.replace("\\u001b", "\\x1b\"\"");
+            let v_mod = v_mod.replace("\\u001c", "\\x1c\"\"");
+            let v_mod = v_mod.replace("\\u001d", "\\x1d\"\"");
+            let v_mod = v_mod.replace("\\u001e", "\\x1e\"\"");
+            let v_mod = v_mod.replace("\\u001f", "\\x1f\"\"");
+            str += &format!("  assert_str_eq(decode.{name}, \"{v_mod}\");\n");
         } else {
-            println!("unknown value pattern for \"{k}\": \"{v}\" in \n{json}");
+            println!("unknown value pattern for \"{k:?}\": \"{v}\" in \n{json}");
             panic!();
         }
     }

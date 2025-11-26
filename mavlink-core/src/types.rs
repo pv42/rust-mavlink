@@ -139,6 +139,8 @@ impl<'a, const N: usize> Arbitrary<'a> for CharArray<N> {
         let s = u.arbitrary::<String>()?;
         let len = s.len().min(N);
         let mut data = [0u8; N];
+        let s = u.arbitrary::<String>()?;
+        let len = s.len().min(N);
         data[..len].copy_from_slice(&s.as_bytes()[..len]);
         Ok(CharArray::new(data))
     }
