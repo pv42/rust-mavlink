@@ -769,30 +769,34 @@ pub struct MavParam {
 }
 
 impl MavParam {
+    fn format_valid_numbers(&self) -> String {
+        match (self.min_value, self.max_value, self.increment) {
+            (Some(min), Some(max), Some(inc)) => {
+                if min + inc == max {
+                    format!("{min}, {max}")
+                } else if min + 2. * inc == max {
+                    format!("{}, {}, {}", min, min + inc, max)
+                } else {
+                    format!("{}, {}, .. , {}", min, min + inc, max)
+                }
+            }
+            (Some(min), Some(max), None) => format!("{min} .. {max}"),
+            (Some(min), None, Some(inc)) => format!("{}, {}, .. ", min, min + inc),
+            (None, Some(max), Some(inc)) => format!(".. , {}, {}", max - inc, max),
+            (Some(min), None, None) => format!("&ge; {min}"),
+            (None, Some(max), None) => format!("&le; {max}"),
+            (None, None, Some(inc)) => format!("Multiples of {inc}"),
+            (None, None, None) => String::new(),
+        }
+    }
+
     fn format_valid_values(&self) -> String {
-        if self.reserved && self.default.is_some() {
-            format!("Reserved (use {})", self.default.unwrap())
+        if let (true, Some(default)) = (self.reserved, self.default) {
+            format!("Reserved (use {})", default)
         } else if let Some(enum_used) = &self.enum_used {
             format!("[`{enum_used}`]")
         } else {
-            match (self.min_value, self.max_value, self.increment) {
-                (Some(min), Some(max), Some(inc)) => {
-                    if min + inc == max {
-                        format!("{min}, {max}")
-                    } else if min + 2. * inc == max {
-                        format!("{}, {}, {}", min, min + inc, max)
-                    } else {
-                        format!("{}, {}, .. , {}", min, min + inc, max)
-                    }
-                }
-                (Some(min), Some(max), None) => format!("{min} .. {max}"),
-                (Some(min), None, Some(inc)) => format!("{}, {}, .. ", min, min + inc),
-                (None, Some(max), Some(inc)) => format!(".. , {}, {}", max - inc, max),
-                (Some(min), None, None) => format!("&ge; {min}"),
-                (None, Some(max), None) => format!("&le; {max}"),
-                (None, None, Some(inc)) => format!("Multiples of {inc}"),
-                (None, None, None) => String::new(),
-            }
+            self.format_valid_numbers()
         }
     }
 
@@ -1981,8 +1985,7 @@ pub fn parse_profile(
                     }
                     Some(&MavXmlElement::Param) => {
                         if let Some(params) = entry.params.as_mut() {
-                            // Some messages can jump between values, like:
-                            // 1, 2, 7
+                            // Some messages can jump between values, like: 1, 2, 7
                             let param_index = param_index.expect("entry params must have an index");
                             while params.len() < param_index {
                                 params.push(MavParam {
@@ -2245,6 +2248,8 @@ fn to_pascal_case(text: impl AsRef<[u8]>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use core::f32;
+
     use super::*;
 
     #[test]
@@ -2441,5 +2446,87 @@ mod tests {
         };
         // Should panic due to no fields
         msg.validate_field_count();
+    }
+
+    #[test]
+    fn test_fmt_mav_param_values() {
+        let enum_param = MavParam {
+            enum_used: Some("ENUM_NAME".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(enum_param.format_valid_values(), "[`ENUM_NAME`]");
+
+        let reserved_param = MavParam {
+            reserved: true,
+            default: Some(f32::NAN),
+            ..Default::default()
+        };
+        assert_eq!(reserved_param.format_valid_values(), "Reserved (use NaN)");
+
+        let unrestricted_param = MavParam::default();
+        assert_eq!(unrestricted_param.format_valid_values(), "");
+
+        let int_param = MavParam {
+            increment: Some(1.0),
+            ..Default::default()
+        };
+        assert_eq!(int_param.format_valid_values(), "Multiples of 1");
+
+        let pos_param = MavParam {
+            min_value: Some(0.0),
+            ..Default::default()
+        };
+        assert_eq!(pos_param.format_valid_values(), "&ge; 0");
+
+        let max_param = MavParam {
+            max_value: Some(5.5),
+            ..Default::default()
+        };
+        assert_eq!(max_param.format_valid_values(), "&le; 5.5");
+
+        let pos_int_param = MavParam {
+            min_value: Some(0.0),
+            increment: Some(1.0),
+            ..Default::default()
+        };
+        assert_eq!(pos_int_param.format_valid_values(), "0, 1, .. ");
+
+        let max_inc_param = MavParam {
+            increment: Some(1.0),
+            max_value: Some(360.0),
+            ..Default::default()
+        };
+        assert_eq!(max_inc_param.format_valid_values(), ".., 359, 360");
+
+        let range_param = MavParam {
+            min_value: Some(0.0),
+            max_value: Some(10.0),
+            ..Default::default()
+        };
+        assert_eq!(range_param.format_valid_values(), "0 .. 10");
+
+        let int_range_param = MavParam {
+            min_value: Some(0.0),
+            max_value: Some(10.0),
+            increment: Some(1.0),
+            ..Default::default()
+        };
+        assert_eq!(int_range_param.format_valid_values(), "0, 1, .. , 10");
+
+        let close_inc_range_param = MavParam {
+            min_value: Some(-2.0),
+            max_value: Some(2.0),
+            increment: Some(2.0),
+            ..Default::default()
+        };
+        assert_eq!(close_inc_range_param.format_valid_values(), "-2, 0, 2");
+
+        let bin_range_param = MavParam {
+            min_value: Some(0.0),
+            max_value: Some(1.0),
+            increment: Some(1.0),
+            ..Default::default()
+        };
+        assert_eq!(bin_range_param.format_valid_values(), "0, 1");
     }
 }
